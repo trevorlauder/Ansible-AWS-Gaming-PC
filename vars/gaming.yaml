@@ -1,0 +1,59 @@
+---
+# Microsoft Windows Server 2019 with AMD Radeon Pro Driver
+amd_ami_product_code: &NVIDIA_PRODUCT_CODE 242ci33gj9xic8sjau1ums1fk
+amd_instance_type: &NVIDIA_INSTANCE_TYPE g4ad.xlarge
+
+# NVIDIA Gaming PC - Windows Server 2019
+nvidia_ami_product_code: &AMD_PRODUCT_CODE eg29gsv7egae1ip4ff8by2vjx
+nvidia_instance_type: &AMD_INSTANCE_TYPE g4dn.xlarge
+
+# Change the tag to reflect which one you want to use
+ami_product_code: *AMD_PRODUCT_CODE
+instance_type: *AMD_INSTANCE_TYPE
+
+vpc_name: Gaming
+key_name: tlauder-windows
+main_ebs_volume_size: 30
+games_ebs_volume_size: 10
+region: us-west-2
+availability_zone: us-west-2a
+vpc_cidr: 192.168.0.0/26
+subnet_cidr: 192.168.0.0/28
+user_data: |
+  <powershell>
+    $downloadPath = $env:TEMP
+
+    $VBCableZip = "VBCABLE_Driver_Pack43.zip";
+    Invoke-WebRequest "https://download.vb-audio.com/Download_CABLE/$VBCableZip" -OutFile $downloadPath\$VBCableZip;
+    New-Item -Path "$downloadPath\VBCable" -ItemType Directory| Out-Null;
+    Expand-Archive -Path "$downloadPath\$VBCableZip" -DestinationPath "$downloadPath\VBCable";
+    $CertificatePath = "$downloadPath\VBCable\VBCableCert.cer";
+    $CatalogFile = "$downloadPath\VBCable\vbaudio_cable64_win7.cat";
+    [System.IO.File]::WriteAllBytes($CertificatePath, $(Get-AuthenticodeSignature -filepath $CatalogFile).SignerCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert));
+    Import-Certificate -CertStoreLocation Cert:\LocalMachine\TrustedPublisher -FilePath $CertificatePath | Out-Null;
+    $VBCableInstaller = "$downloadPath\VBCable\VBCABLE_Setup_x64.exe";
+    Start-Process -FilePath $VBCableInstaller -ArgumentList "-i -h" -Verb RunAs;
+    Set-Service -Name audiosrv -StartupType Automatic;
+    Start-Service -Name audiosrv;
+    Wait-Process -Name VBCABLE_Setup_x64 -ErrorAction SilentlyContinue
+    Remove-Item $downloadPath\$VBCableZip;
+    Remove-Item $downloadPath\VBCable -Recurse;
+
+    Get-PnpDevice | where {$_.friendlyname -like "Generic Non-PNP Monitor" -and $_.status -eq "OK"} | Disable-PnpDevice -confirm:$false
+    Get-PnpDevice | where {$_.friendlyname -like "Microsoft Basic Display Adapter" -and $_.status -eq "OK"} | Disable-PnpDevice -confirm:$false
+
+    $ChromeInstaller = "chrome_installer.exe";
+    Invoke-WebRequest "https://dl.google.com/chrome/install/$ChromeInstaller" -OutFile $downloadPath\$ChromeInstaller;
+    Start-Process -FilePath $downloadPath\$ChromeInstaller -ArgumentList "/silent /install" -Verb RunAs -Wait;
+    Remove-Item $downloadPath\$ChromeInstaller;
+
+    $SteamInstaller = "SteamSetup.exe";
+    Invoke-WebRequest "https://cdn.cloudflare.steamstatic.com/client/installer/$SteamInstaller" -OutFile $downloadPath\$SteamInstaller;
+    Start-Process -FilePath $downloadPath\$SteamInstaller -ArgumentList "/S" -Verb RunAs -Wait;
+    Remove-Item $downloadPath\$SteamInstaller;
+
+    $ParsecInstaller = "parsec-windows.exe"
+    Invoke-WebRequest "https://builds.parsecgaming.com/package/$ParsecInstaller" -OutFile $downloadPath\$ParsecInstaller;
+    Start-Process -FilePath $downloadPath\$ParsecInstaller -ArgumentList "/S /norun /shared" -Verb RunAs -Wait;
+    Remove-Item $downloadPath\$ParsecInstaller;
+  </powershell>

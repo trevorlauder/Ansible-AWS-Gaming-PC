@@ -1,0 +1,25 @@
+# Copyright 2022 Trevor Lauder.
+# SPDX-License-Identifier: MIT
+---
+- hosts: localhost
+  vars_files:
+    - vars/gaming.yaml
+    - vars/private.yaml
+  tasks:
+    - name: Get the spot instance request information
+      amazon.aws.ec2_spot_instance_info:
+        region: "{{ region }}"
+        filters:
+          state: active
+          tag:Name: "{{ vpc_name }}"
+      register: spot_instance_request_info
+    - name: Get the instance information
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        instance_ids:
+          - "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+      register: spot_instance_info
+    - name: Print EC2 Public DNS
+      ansible.builtin.debug:
+        msg: "{{ spot_instance_info.instances[0].public_dns_name }}"
+        verbosity: 0

@@ -1,0 +1,123 @@
+# Copyright 2022 Trevor Lauder.
+# SPDX-License-Identifier: MIT
+---
+- hosts: localhost
+  vars_files:
+    - vars/gaming.yaml
+    - vars/private.yaml
+  tasks:
+    - name: Create VPC
+      amazon.aws.ec2_vpc_net:
+        state: present
+        region: "{{ region }}"
+        name: "{{ vpc_name }}"
+        cidr_block: "{{ vpc_cidr }}"
+        tags:
+          Name: "{{ vpc_name }}"
+      register: vpc
+    - name: Create Internet Gateway
+      amazon.aws.ec2_vpc_igw:
+        state: present
+        region: "{{ region }}"
+        vpc_id: "{{ vpc.vpc.id }}"
+        tags:
+          Name: "{{ vpc_name }}"
+      register: igw
+    - name: "Create Subnet"
+      amazon.aws.ec2_vpc_subnet:
+        state: present
+        region: "{{ region }}"
+        map_public: true
+        vpc_id: "{{ vpc.vpc.id }}"
+        cidr: "{{ subnet_cidr }}"
+        az: "{{ availability_zone }}"
+        tags:
+          Name: "{{ vpc_name }}"
+      register: subnet
+    - name: Create Route Table
+      amazon.aws.ec2_vpc_route_table:
+        state: present
+        region: "{{ region }}"
+        vpc_id: "{{ vpc.vpc.id }}"
+        tags:
+          Name: "{{ vpc_name }}"
+        subnets:
+          - "{{ subnet.subnet.id }}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{ igw.gateway_id }}"
+      register: public_route_table
+    - name: Create Security Group
+      amazon.aws.ec2_group:
+        state: present
+        region: "{{ region }}"
+        name: "{{ vpc_name }}"
+        description: "{{ vpc_name }}"
+        vpc_id: "{{ vpc.vpc.id }}"
+        tags:
+          Name: "{{ vpc_name }}"
+        rules:
+          - proto: tcp
+            from_port: 3389
+            to_port: 3389
+            cidr_ip: "{{ home_ip }}"
+          - proto: udp
+            from_port: 3389
+            to_port: 3389
+            cidr_ip: "{{ home_ip }}"
+        rules_egress:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+      register: sg
+    - name: Get the spot instance request information
+      amazon.aws.ec2_spot_instance_info:
+        region: "{{ region }}"
+        filters:
+          state:
+            - active
+            - open
+            - disabled
+          tag:Name: "{{ vpc_name }}"
+      register: spot_instance_request_info
+    - name: "Get the latest AMI for {{ ami_product_code }}"
+      amazon.aws.ec2_ami_info:
+        region: "{{ region }}"
+        filters:
+          product-code: "{{ ami_product_code }}"
+      register: ami_info
+    - name: "Print {{ ami_product_code }} AMI ID"
+      ansible.builtin.debug:
+        msg: "{{ (ami_info.images | selectattr('name', 'defined') | sort(attribute='creation_date') | last).image_id }}"
+        verbosity: 0
+    - name: Create EC2 Spot Instance Request
+      amazon.aws.ec2_spot_instance:
+        state: present
+        region: "{{ region }}"
+        interruption: stop
+        count: 1
+        spot_type: persistent
+        tags:
+          Name: "{{ vpc_name }}"
+        launch_specification:
+          image_id: "{{ (ami_info.images | selectattr('name', 'defined') | sort(attribute='creation_date') | last).image_id }}"
+          user_data: "{{ user_data | b64encode }}"
+          key_name: "{{ key_name }}"
+          instance_type: "{{ instance_type }}"
+          iam_instance_profile:
+            arn: "{{ iam_instance_profile }}"
+          subnet_id: "{{ subnet.subnet.id }}"
+          security_group_ids:
+            - "{{ sg.group_id }}"
+          block_device_mappings:
+            - device_name: /dev/sda1
+              ebs:
+                volume_size: "{{ main_ebs_volume_size }}"
+                delete_on_termination: True
+                volume_type: gp2
+            - device_name: /dev/xvda
+              ebs:
+                volume_size: "{{ games_ebs_volume_size }}"
+                delete_on_termination: False
+                volume_type: gp2
+      when: spot_instance_request_info.spot_request is not defined or spot_instance_request_info.spot_request | length == 0
+      register: spot_request

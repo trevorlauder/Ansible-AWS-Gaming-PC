@@ -1,0 +1,77 @@
+# Copyright 2022 Trevor Lauder.
+# SPDX-License-Identifier: MIT
+---
+- hosts: localhost
+  vars_files:
+    - vars/gaming.yaml
+    - vars/private.yaml
+  tasks:
+    - name: Get the spot instance request information
+      amazon.aws.ec2_spot_instance_info:
+        region: "{{ region }}"
+        filters:
+          state: disabled
+          tag:Name: "{{ vpc_name }}"
+      register: spot_instance_request_info
+    - name: Get the instance information
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        instance_ids:
+          - "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+      register: spot_instance_info
+    - name: Get the Gaming Instance volume information
+      amazon.aws.ec2_snapshot_info:
+        region: "{{ region }}"
+        filters:
+          tag:Name: "{{ vpc_name }}"
+          tag:device_name: /dev/sda1
+      register: gaming_instance_snapshot
+    - name: Get the Games volume information
+      amazon.aws.ec2_snapshot_info:
+        region: "{{ region }}"
+        filters:
+          tag:Name: "{{ vpc_name }}"
+          tag:device_name: /dev/xvda
+      register: games_snapshot
+    - name: Attach the Gaming Instance volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        instance: "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+        snapshot: "{{ gaming_instance_snapshot.snapshots[0].snapshot_id }}"
+        delete_on_termination: True
+        device_name: /dev/sda1
+        volume_type: gp2
+        tags:
+          Name: "{{ vpc_name }}"
+    - name: Attach the Games volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        instance: "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+        snapshot: "{{ games_snapshot.snapshots[0].snapshot_id }}"
+        delete_on_termination: False
+        device_name: /dev/xvda
+        volume_type: gp2
+        tags:
+          Name: "{{ vpc_name }}"
+    - name: Start the instance
+      amazon.aws.ec2_instance:
+        state: started
+        region: "{{ region }}"
+        instance_ids:
+          - "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+    - name: Delete the first snapshot
+      amazon.aws.ec2_snapshot:
+        state: absent
+        region: "{{ region }}"
+        wait: true
+        snapshot_id: "{{ gaming_instance_snapshot.snapshots[0].snapshot_id }}"
+    - name: Delete the second snapshot
+      amazon.aws.ec2_snapshot:
+        state: absent
+        region: "{{ region }}"
+        wait: true
+        snapshot_id: "{{ games_snapshot.snapshots[0].snapshot_id }}"
+    - name: Print EC2 Public DNS
+      ansible.builtin.debug:
+        msg: "{{ spot_instance_info.instances[0].public_dns_name }}"
+        verbosity: 0

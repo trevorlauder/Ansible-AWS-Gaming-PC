@@ -1,0 +1,65 @@
+# Copyright 2022 Trevor Lauder.
+# SPDX-License-Identifier: MIT
+---
+- hosts: localhost
+  vars_files:
+    - vars/gaming.yaml
+    - vars/private.yaml
+  tasks:
+    - name: Get the spot instance request information
+      amazon.aws.ec2_spot_instance_info:
+        region: "{{ region }}"
+        filters:
+          state: active
+          tag:Name: "{{ vpc_name }}"
+      register: spot_instance_request_info
+    - name: Get the instance information
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        instance_ids:
+          - "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+      register: spot_instance_info
+    - name: Stop the instance
+      amazon.aws.ec2_instance:
+        state: stopped
+        region: "{{ region }}"
+        instance_ids:
+          - "{{ spot_instance_request_info.spot_request[0].instance_id }}"
+    - name: Snapshot the first volume
+      amazon.aws.ec2_snapshot:
+        state: present
+        region: "{{ region }}"
+        volume_id: "{{ spot_instance_info.instances[0].block_device_mappings[0].ebs.volume_id }}"
+        wait: true
+        snapshot_tags:
+          Name: "{{ vpc_name }}"
+          device_name: "{{ spot_instance_info.instances[0].block_device_mappings[0].device_name }}"
+    - name: Snapshot the second volume
+      amazon.aws.ec2_snapshot:
+        state: present
+        region: "{{ region }}"
+        volume_id: "{{ spot_instance_info.instances[0].block_device_mappings[1].ebs.volume_id }}"
+        wait: true
+        snapshot_tags:
+          Name: "{{ vpc_name }}"
+          device_name: "{{ spot_instance_info.instances[0].block_device_mappings[1].device_name }}"
+    - name: Detach the first volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        id: "{{ spot_instance_info.instances[0].block_device_mappings[0].ebs.volume_id }}"
+        instance: None
+    - name: Detach the second volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        id: "{{ spot_instance_info.instances[0].block_device_mappings[1].ebs.volume_id }}"
+        instance: None
+    - name: Delete the first volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        id: "{{ spot_instance_info.instances[0].block_device_mappings[0].ebs.volume_id }}"
+        state: absent
+    - name: Delete the second volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        id: "{{ spot_instance_info.instances[0].block_device_mappings[1].ebs.volume_id }}"
+        state: absent
