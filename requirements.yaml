@@ -1,4 +1,4 @@
 ---
 collections:
   - name: amazon.aws
-    version: 4.2.0
+    version: 7.5.0

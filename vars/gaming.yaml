@@ -1,11 +1,11 @@
 ---
 # Microsoft Windows Server 2019 with AMD Radeon Pro Driver
-amd_ami_product_code: &NVIDIA_PRODUCT_CODE 242ci33gj9xic8sjau1ums1fk
-amd_instance_type: &NVIDIA_INSTANCE_TYPE g4ad.xlarge
+amd_ami_product_code: &AMD_PRODUCT_CODE 242ci33gj9xic8sjau1ums1fk
+amd_instance_type: &AMD_INSTANCE_TYPE g4ad.xlarge
 
 # NVIDIA Gaming PC - Windows Server 2019
-nvidia_ami_product_code: &AMD_PRODUCT_CODE eg29gsv7egae1ip4ff8by2vjx
-nvidia_instance_type: &AMD_INSTANCE_TYPE g4dn.xlarge
+nvidia_ami_product_code: &NVIDIA_PRODUCT_CODE eg29gsv7egae1ip4ff8by2vjx
+nvidia_instance_type: &NVIDIA_INSTANCE_TYPE g4dn.xlarge
 
 # Change the tag to reflect which one you want to use
 ami_product_code: *AMD_PRODUCT_CODE
